@@ -1,3 +1,18 @@
+"""
+--------------------------------------
+Trainer using Linear Regression Model
+--------------------------------------
+
+1. Cleans data
+2. Create features
+3. Split dataset into train/test
+4. Build pipeline
+5. Train model
+6. Evaluate predictions
+
+"""
+
+## SETUP ## 
 import joblib
 import numpy as np
 import pandas as pd
@@ -19,24 +34,32 @@ from sklearn.preprocessing import FunctionTransformer
 
 MODEL = "Linear Regression"
 
-def build_preprocessor():
+# STEP 1
+def build_preprocessor() -> ColumnTransformer:
+    """
+    This function prepares data using transformers.
+    """
 
+    # Handles numeric features
     numeric_pipeline = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", StandardScaler()),
+        ("imputer", SimpleImputer(strategy="median")), # NaN = median of column
+        ("scaler", StandardScaler()), # Standardizes
     ])
 
+    # Handles binary features where NaN becomes 0
     binary_zero_pipeline = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
+        ("imputer", SimpleImputer(strategy="constant", fill_value=0)), # NaN = 0
     ])
 
+    # Handles binary features where NaN is kept
     binary_unknown_pipeline = Pipeline(steps=[
-        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
-        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
-        ("to_string", FunctionTransformer(lambda X: X.astype(str))),
-        ("onehot", OneHotEncoder(handle_unknown="ignore")),
+        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))), # Converts to object type
+        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")), # NaN = "Unknown"
+        ("to_string", FunctionTransformer(lambda X: X.astype(str))), # Converts to string
+        ("onehot", OneHotEncoder(handle_unknown="ignore")), # Apply one-hot encoding
     ])
 
+    # Handles categporical features (same as above)
     categorical_pipeline = Pipeline(steps=[
         ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
         ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
@@ -44,6 +67,7 @@ def build_preprocessor():
         ("onehot", OneHotEncoder(handle_unknown="ignore")),
     ])
 
+    # Handles connecting features to the right pipeline
     preprocessor = ColumnTransformer(
         transformers=[
             ("numeric", numeric_pipeline, config.NUMERIC_FEATURES),
@@ -66,6 +90,7 @@ def build_model_pipeline():
     print("[COMPLETED] Linear Regression pipeline")
     return model_pipeline
 
+# Training step
 def train_model(model_pipeline, X_train, y_train):
     print("[STARTING] Training Linear Regression model...")
     model_pipeline.fit(X_train, y_train)
@@ -125,20 +150,32 @@ def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
     }
 
 def main():
+    """
+     Main training workflow:
+    - Load and clean the dataset
+    - Engineer features and separate inputs from target
+    - Split data into training and testing sets
+    - Build the pipeline 
+    - Train the model on training data
+    - Evaluate model performance on train/test data
+    """
+
+    # Prints header
     print(f"\n{'=' * 60}")
     print(" train_linear_regression.py ")
     print(f"{'=' * 60}")
-
     print("[STARTING] Loading and preparing data...")
-    df = load_data()
-    df = remove_exact_duplicates(df)
+
+    df = load_data() # Loads the dataset into a dataframe
+    df = remove_exact_duplicates(df) # Cleans the dataset
     print("[COMPLETED] Initial setup")
-    df = engineer_features(df)
-    X, y = split_target_features(df)
-    X_train, X_test, y_train, y_test = split_train_test(X, y)
-    model_pipeline = build_model_pipeline()
-    model_pipeline = train_model(model_pipeline, X_train, y_train)
-    y_pred, metrics = evaluate_model(model_pipeline, X_train, y_train, X_test, y_test)
+
+    df = engineer_features(df) # Feature engineering
+    X, y = split_target_features(df) # Split target from imput features
+    X_train, X_test, y_train, y_test = split_train_test(X, y) # Split dataset to train/test
+    model_pipeline = build_model_pipeline() # Creates the pipeline
+    model_pipeline = train_model(model_pipeline, X_train, y_train) # Training
+    y_pred, metrics = evaluate_model(model_pipeline, X_train, y_train, X_test, y_test) # Tests the trained model and show metrics
 
 if __name__ == "__main__":
     main()

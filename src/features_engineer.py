@@ -20,11 +20,6 @@ def remove_exact_duplicates(df):
     return df_deduped
 
 ## Feature engineering
-## "availability" = turn into binary immediately_available
-# "category"
-#     "postal_code",
-#     "epc",
-#     "flooding_area_type",
 def engineer_features(df):
     print("[STARTING] Features engineering...")
     df = process_availability(df)
