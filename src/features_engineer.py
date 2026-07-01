@@ -1,5 +1,5 @@
 import pandas as pd
-import config
+from src import config
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -26,11 +26,13 @@ def remove_exact_duplicates(df):
 #     "epc",
 #     "flooding_area_type",
 def engineer_features(df):
+    print("[STARTING] Features engineering...")
     df = process_availability(df)
     df = process_category(df)
     df = process_epc(df)
     df = process_flooding_area(df)
     df = process_binary_missing_values(df)
+    print("[COMPLETED] Features engineering...")
     return df
 
 # Process "availability" to a binary "available_immediately"
@@ -158,6 +160,7 @@ def process_binary_missing_values(df):
 
 ## Select target and features
 def split_target_features(df):
+    print("[STARTING] Target/features split")
     target = "price"
 
     y = df[target]
@@ -166,11 +169,13 @@ def split_target_features(df):
     print("Target:", target)
     print("Feature rows:", len(X))
     print("Feature columns:", len(X.columns))
+    print("[COMPLETED] Target/features split")
 
     return X, y
 
 ## Split train/test
 def split_train_test(X, y):
+    print("[STARTING] Train/test split")
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -183,6 +188,7 @@ def split_train_test(X, y):
     print("X_test:", X_test.shape)
     print("y_train:", y_train.shape)
     print("y_test:", y_test.shape)
+    print("[COMPLETED] Train/test split")
 
     return X_train, X_test, y_train, y_test
 
@@ -192,19 +198,13 @@ def main():
     print(" training_base.py ")
     print(f"\n{'=' * 60}")
 
-    print("[STARTING] Initial setup...")
+    print("[STARTING] Loading and preparing data...")
     df = load_data()
     df = remove_exact_duplicates(df)
     print("[COMPLETED] Initial setup")
-    print("[STARTING] Features processing...")
     df = engineer_features(df)
-    print("[COMPLETED] Features processing...")
-    print("[STARTING] Target/features split")
     X, y = split_target_features(df)
-    print("[COMPLETED] Target/features split...")
-    print("[STARTING] Train/test split")
     X_train, X_test, y_train, y_test = split_train_test(X, y)
-    print("[COMPLETED] Train/test split...")
 
 if __name__ == "__main__":
     main()
