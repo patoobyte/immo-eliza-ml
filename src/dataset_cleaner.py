@@ -87,6 +87,7 @@ COLS_TO_DROP = {
 	"yearly_primary_energy_consumption" : "EPC offers more reliable data",
 	"frontage_width" : "Weak expected signal",
 	"building_permission_granted" : "Weak expected signal",
+    "planning_permission_granted" : "Weak expected signal",
 	"bathroom_surface" : "Part of living surface",
 	"kitchen_type" : "Suspicious - Seems inconsistent and weak expected signal",
 	"g_score" : ">85% missing & Possible regional bias - Most data come from Flanders",
@@ -94,6 +95,7 @@ COLS_TO_DROP = {
 	"terrain_width_at_roadside" : "Weak expected signal",
 	"living_room_surface" : "Part of living surface",
     "protected_heritage" : "Weak expected signal",
+    "demarcated_flooding_area" : ">90% missingness",
 }
 
 print(f"Cleaning - Step 1: Dropping unusable features...")
@@ -127,7 +129,3 @@ df.info()
 path = Path(config.DATA_CLN)
 path.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(path, index=False, encoding="utf-8")
-
-
-#Testing area
-#df["price"].dtype
