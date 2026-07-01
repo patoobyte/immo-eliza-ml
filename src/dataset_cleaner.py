@@ -8,7 +8,7 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.max_info_columns", 200)
 pd.set_option("display.float_format", "{:.3f}".format)
 
-df = pd.read_csv(config.DATA_RAW)
+df = pd.read_csv(config.DATA_AUDITED)
 
 # Checks the dataset's shape before processing
 # print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns\n")
@@ -84,7 +84,6 @@ COLS_TO_DROP = {
     "epc_reference" : "Unique identifier",
 	"co2_emission" : "Too many unrealistic values",
 	"urbanism_affectation" : "Possible regional bias - Most data come from Flanders",
-	"attic_surface" : "Part of living surface",
 	"yearly_primary_energy_consumption" : "EPC offers more reliable data",
 	"frontage_width" : "Weak expected signal",
 	"building_permission_granted" : "Weak expected signal",
@@ -106,7 +105,6 @@ print(f"Remaining shape after Step 1: {df.shape}")
 print(f"Cleaning - Step 2: Converting data types...")
 
 # 2-1 : Convert date data to date format
-df["date_posted"] = pd.to_datetime(df["date_posted"])
 df["date_posted"] = pd.to_datetime(df["date_posted"])
 
 # Extract date : keep year and month, drops day
