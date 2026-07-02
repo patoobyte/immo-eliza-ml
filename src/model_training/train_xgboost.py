@@ -60,15 +60,30 @@ def build_model_pipeline():
     preprocessor = build_preprocessor()
     model_pipeline = Pipeline(steps=[
         ("preprocessor", preprocessor),
+        # ("model", XGBRegressor(
+        #     n_estimators=1000,
+        #     learning_rate=0.03,
+        #     max_depth=8,
+        #     subsample=0.8,
+        #     colsample_bytree=0.8,
+        #     objective="reg:squarederror",
+        #     random_state=config.RANDOM_SEED,
+        #     n_jobs=-1,
+        #     min_child_weight=1,
+        # ))
         ("model", XGBRegressor(
-            n_estimators=500,
-            learning_rate=0.05,
-            max_depth=6,
-            subsample=0.8,
-            colsample_bytree=0.8,
+            n_estimators=800,
+            learning_rate=0.03,
+            max_depth=10,
+            subsample=0.9,
+            colsample_bytree=1.0,
             objective="reg:squarederror",
             random_state=config.RANDOM_SEED,
             n_jobs=-1,
+            min_child_weight=10,
+            reg_alpha=1,
+            reg_lambda=10,
+            gamma=0.01
         ))
     ])
     print(f"[COMPLETED] {MODEL} pipeline")
@@ -76,7 +91,8 @@ def build_model_pipeline():
 
 def train_model(model_pipeline, X_train, y_train):
     print(f"[STARTING] Training {MODEL} model...")
-    model_pipeline.fit(X_train, y_train)
+    y_train_log = np.log1p(y_train)
+    model_pipeline.fit(X_train, y_train_log)
     print(f"[COMPLETED] Training {MODEL} model")
     return model_pipeline
 
@@ -107,6 +123,8 @@ def print_prediction_diagnostics(label, y_true, y_pred):
     print("Max predicted price:", round(errors["predicted"].max(), 2))
     print("Negative predictions:", int((errors["predicted"] < 0).sum()))
 
+    pd.set_option("display.float_format", "{:,.0f}".format)
+
     print(f"\n{MODEL} {label} worst prediction errors:")
     print(
         errors
@@ -116,8 +134,11 @@ def print_prediction_diagnostics(label, y_true, y_pred):
     )
 
 def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
-    y_train_pred = model_pipeline.predict(X_train)
-    y_test_pred = model_pipeline.predict(X_test)
+    y_train_pred_log = model_pipeline.predict(X_train)
+    y_train_pred = np.expm1(y_train_pred_log)
+
+    y_test_pred_log = model_pipeline.predict(X_test)
+    y_test_pred = np.expm1(y_test_pred_log)
 
     train_metrics = compute_metrics(y_train, y_train_pred)
     test_metrics = compute_metrics(y_test, y_test_pred)
