@@ -1,5 +1,5 @@
 import pandas as pd
-import config
+from src import config
 import warnings
 from pathlib import Path
 

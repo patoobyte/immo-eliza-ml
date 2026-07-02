@@ -1,13 +1,30 @@
 import pandas as pd
-import config
+from src import config
 from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.linear_model import LinearRegression
 
-## SETUP
+"""
+(description)
+
+prepare_df : The orchestrator for preparing the dataset for model training.
+"""
+
+### MAIN ORCHESTRATORS ###
+def prepare_training_data():
+    df = load_data()
+    df = remove_exact_duplicates(df)
+    df = engineer_features(df)
+    X, y = split_target_features(df)
+    X_train, X_test, y_train, y_test = split_train_test(X, y)
+    return X_train, X_test, y_train, y_test
+
+def prepare_cv_data():
+    df = load_data()
+    df = remove_exact_duplicates(df)
+    df = engineer_features(df)
+    X, y = split_target_features(df)
+    return X, y
+
+# Setup functions
 def load_data():
     df = pd.read_csv(config.DATA_CLN)
     print("Loaded CSV")
@@ -19,18 +36,15 @@ def remove_exact_duplicates(df):
     print("Removed exact duplicates")
     return df_deduped
 
-## Feature engineering
-## "availability" = turn into binary immediately_available
-# "category"
-#     "postal_code",
-#     "epc",
-#     "flooding_area_type",
+## Feature engineering orchestrator
 def engineer_features(df):
+    print("[STARTING] Features engineering...")
     df = process_availability(df)
     df = process_category(df)
     df = process_epc(df)
     df = process_flooding_area(df)
-    df = process_binary_missing_values(df)
+    df = process_parkings(df)
+    print("[COMPLETED] Features engineering...")
     return df
 
 # Process "availability" to a binary "available_immediately"
@@ -63,6 +77,7 @@ def process_availability(df):
     print("Processed feature 'availability' into 'available_immediately'")
     return df
 
+# Handles out-of-scope categories
 def process_category(df):
     df = df.copy()
 
@@ -84,9 +99,11 @@ def process_category(df):
     print("Processed features 'category' & 'property_type'")
     return df
 
+# Handles EPC label across regional variants
 def process_epc(df):
     df = df.copy()
 
+    # Flattens regional EPC label
     epc_map = {
         # Flanders
         "FlandersDoubleA": "excellent",
@@ -130,6 +147,7 @@ def process_epc(df):
     print("Processed feature 'epc' into 'epc_quality'")
     return df
 
+# Handles flooding_area_type feature to set NaN as NaN
 def process_flooding_area(df):
     df = df.copy()
 
@@ -148,16 +166,30 @@ def process_flooding_area(df):
     print("Processed feature 'flooding_area_type' to 'flooding_area_clean'")
     return df
 
-def process_binary_missing_values(df):
+# Handles parking features by turning it into a presence flag
+def process_parkings(df):
     df = df.copy()
 
-    for col in config.BINARY_MISSING_AS_ZERO:
-        df[col] = df[col].fillna(0)
-    print("Processed missing values for binary features")
+    parking_cols = [
+        "indoor_parking",
+        "outdoor_parking",
+    ]
+
+    for col in parking_cols:
+        parking = pd.to_numeric(df[col], errors="coerce")
+
+        df[col] = pd.NA
+        df.loc[parking.eq(0), col] = 0
+        df.loc[parking.notna() & parking.ne(0), col] = 1
+
+        df[col] = df[col].astype("Int64")
+
+    print("Processed parking features into binary presence flags")
     return df
 
 ## Select target and features
 def split_target_features(df):
+    print("[STARTING] Target/features split")
     target = "price"
 
     y = df[target]
@@ -166,11 +198,13 @@ def split_target_features(df):
     print("Target:", target)
     print("Feature rows:", len(X))
     print("Feature columns:", len(X.columns))
+    print("[COMPLETED] Target/features split")
 
     return X, y
 
 ## Split train/test
 def split_train_test(X, y):
+    print("[STARTING] Train/test split")
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -183,6 +217,7 @@ def split_train_test(X, y):
     print("X_test:", X_test.shape)
     print("y_train:", y_train.shape)
     print("y_test:", y_test.shape)
+    print("[COMPLETED] Train/test split")
 
     return X_train, X_test, y_train, y_test
 
@@ -192,19 +227,13 @@ def main():
     print(" training_base.py ")
     print(f"\n{'=' * 60}")
 
-    print("[STARTING] Initial setup...")
+    print("[STARTING] Loading and preparing data...")
     df = load_data()
     df = remove_exact_duplicates(df)
     print("[COMPLETED] Initial setup")
-    print("[STARTING] Features processing...")
     df = engineer_features(df)
-    print("[COMPLETED] Features processing...")
-    print("[STARTING] Target/features split")
     X, y = split_target_features(df)
-    print("[COMPLETED] Target/features split...")
-    print("[STARTING] Train/test split")
     X_train, X_test, y_train, y_test = split_train_test(X, y)
-    print("[COMPLETED] Train/test split...")
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,4 @@
-import config
+from src import config
 import pandas as pd
 
 ## Readies the raw csv file for data cleaning
@@ -160,21 +160,31 @@ def remove_suspicious_duplicates(df):
 
     return df_deduped
 
-def remove_missing_price(df):
+def remove_invalid_price(df):
     df_work = df.copy()
     df_work["price"] = pd.to_numeric(df_work["price"], errors="coerce")
 
-    invalid_price_rows = df_work["price"].isna() | (df_work["price"] <= 0)
+    missing_price_rows = df_work["price"].isna()
+    non_positive_price_rows = df_work["price"] <= 0
+    below_min_price_rows = (df_work["price"] > 0) & (df_work["price"] < config.MIN_VALID_PRICE)
+
+    invalid_price_rows = (
+        missing_price_rows
+        | non_positive_price_rows
+        | below_min_price_rows
+    )
+
     df_cleaned = df_work.loc[~invalid_price_rows].copy()
 
     print(f"\n{'=' * 60}")
-    print("Initializing missing price removal")
+    print("Initializing invalid price removal")
     print(f"{'=' * 60}")
     print("Rows before:", len(df))
     print("Rows after:", len(df_cleaned))
     print("Rows removed:", len(df) - len(df_cleaned))
-    print("Missing price rows:", int(df_work["price"].isna().sum()))
-    print("Non-positive price rows:", int((df_work["price"] <= 0).sum()))
+    print("Missing price rows:", int(missing_price_rows.sum()))
+    print("Non-positive price rows:", int(non_positive_price_rows.sum()))
+    print(f"Rows with price below {config.MIN_VALID_PRICE}:", int(below_min_price_rows.sum()))
 
     return df_cleaned
 
@@ -198,14 +208,192 @@ def swap_coordinates(df):
     print(f"{'=' * 60}")
     print("Swapped coordinates found:", int(swapped_coordinates.sum()))
 
-    return df_work    
+    return df_work 
+
+def null_invalid_coordinates(df):
+    df_work = df.copy()
+
+    df_work["latitude"] = pd.to_numeric(
+        df_work["latitude"],
+        errors="coerce",
+    )
+    df_work["longitude"] = pd.to_numeric(
+        df_work["longitude"],
+        errors="coerce",
+    )
+
+    invalid_coordinate_rows = (
+        df_work["latitude"].notna()
+        & df_work["longitude"].notna()
+        & (
+            ~df_work["latitude"].between(LAT_MIN, LAT_MAX)
+            | ~df_work["longitude"].between(LON_MIN, LON_MAX)
+        )
+    )
+
+    df_work.loc[invalid_coordinate_rows, ["latitude", "longitude"]] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid coordinates nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print("Rows with coordinates outside Belgium bounds:", int(invalid_coordinate_rows.sum()))
+
+    return df_work
+
+def null_invalid_livable_surface(df):
+    df_work = df.copy()
+    df_work["livable_surface"] = pd.to_numeric(
+        df_work["livable_surface"],
+        errors="coerce",
+    )
+
+    invalid_livable_surface_rows = (
+        df_work["livable_surface"].notna()
+        & (df_work["livable_surface"] < config.MIN_SURFACE)
+    )
+
+    df_work.loc[invalid_livable_surface_rows, "livable_surface"] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid livable surface nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print(
+        f"Rows with livable_surface below {config.MIN_SURFACE}:",
+        int(invalid_livable_surface_rows.sum()),
+    )
+
+    return df_work   
+
+def null_invalid_garages(df):
+    df_work = df.copy()
+    df_work["garages"] = pd.to_numeric(
+        df_work["garages"],
+        errors="coerce",
+    )
+
+    invalid_garage_rows = (
+        df_work["garages"].notna()
+        & (df_work["garages"] > config.MAX_GARAGES)
+    )
+
+    df_work.loc[invalid_garage_rows, "garages"] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid garages nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print(
+        f"Rows with garages above {config.MAX_GARAGES}:",
+        int(invalid_garage_rows.sum()),
+    )
+
+    return df_work
+
+def null_invalid_facades(df):
+    df_work = df.copy()
+    df_work["facades"] = pd.to_numeric(
+        df_work["facades"],
+        errors="coerce",
+    )
+
+    invalid_facade_rows = (
+        df_work["facades"].notna()
+        & (df_work["facades"] > 4)
+    )
+
+    df_work.loc[invalid_facade_rows, "facades"] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid facades nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print("Rows with facades above 4:", int(invalid_facade_rows.sum()))
+
+    return df_work
+
+def null_invalid_total_floor(df):
+    df_work = df.copy()
+
+    df_work["number_of_floors"] = pd.to_numeric(
+        df_work["number_of_floors"],
+        errors="coerce",
+    )
+
+    invalid_total_floor_rows = (
+        df_work["number_of_floors"].notna()
+        & (df_work["number_of_floors"] > config.MAX_FLOOR)
+    )
+
+    df_work.loc[invalid_total_floor_rows, "number_of_floors"] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid total floor nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print(
+        f"Rows with number_of_floors above {config.MAX_FLOOR}:",
+        int(invalid_total_floor_rows.sum()),
+    )
+
+    return df_work
+
+def null_invalid_floor(df):
+    df_work = df.copy()
+
+    df_work["floor"] = pd.to_numeric(
+        df_work["floor"],
+        errors="coerce",
+    )
+    df_work["number_of_floors"] = pd.to_numeric(
+        df_work["number_of_floors"],
+        errors="coerce",
+    )
+
+    floor_above_max_rows = (
+        df_work["floor"].notna()
+        & (df_work["floor"] > config.MAX_FLOOR)
+    )
+
+    floor_above_total_rows = (
+        df_work["floor"].notna()
+        & df_work["number_of_floors"].notna()
+        & (df_work["floor"] > df_work["number_of_floors"])
+    )
+
+    invalid_floor_rows = floor_above_max_rows | floor_above_total_rows
+
+    df_work.loc[invalid_floor_rows, "floor"] = pd.NA
+
+    print(f"\n{'=' * 60}")
+    print("Initializing invalid floor nulling")
+    print(f"{'=' * 60}")
+    print("Rows checked:", len(df))
+    print(
+        f"Rows with floor above {config.MAX_FLOOR}:",
+        int(floor_above_max_rows.sum()),
+    )
+    print(
+        "Rows where floor is above number_of_floors:",
+        int(floor_above_total_rows.sum()),
+    )
+    print("Total floor rows nulled:", int(invalid_floor_rows.sum()))
+
+    return df_work
 
 def main():
     df = load_data()
     df = swap_coordinates(df)
+    df = null_invalid_coordinates(df)
     df = remove_safe_duplicates(df)
     df = remove_suspicious_duplicates(df)
-    df = remove_missing_price(df)    
+    df = remove_invalid_price(df)
+    df = null_invalid_livable_surface(df)
+    df = null_invalid_garages(df)
+    df = null_invalid_facades(df)
+    df = null_invalid_total_floor(df)
+    df = null_invalid_floor(df)
     df.to_csv(config.DATA_AUDITED, index=False)
     print(f"\nAudited raw dataset saved to: {config.DATA_AUDITED}")
     print("Final rows:", len(df))
