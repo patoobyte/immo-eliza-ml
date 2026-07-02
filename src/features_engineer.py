@@ -1,13 +1,30 @@
 import pandas as pd
 from src import config
 from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.linear_model import LinearRegression
 
-## SETUP
+"""
+(description)
+
+prepare_df : The orchestrator for preparing the dataset for model training.
+"""
+
+### MAIN ORCHESTRATORS ###
+def prepare_training_data():
+    df = load_data()
+    df = remove_exact_duplicates(df)
+    df = engineer_features(df)
+    X, y = split_target_features(df)
+    X_train, X_test, y_train, y_test = split_train_test(X, y)
+    return X_train, X_test, y_train, y_test
+
+def prepare_cv_data():
+    df = load_data()
+    df = remove_exact_duplicates(df)
+    df = engineer_features(df)
+    X, y = split_target_features(df)
+    return X, y
+
+# Setup functions
 def load_data():
     df = pd.read_csv(config.DATA_CLN)
     print("Loaded CSV")
@@ -19,7 +36,7 @@ def remove_exact_duplicates(df):
     print("Removed exact duplicates")
     return df_deduped
 
-## Feature engineering
+## Feature engineering orchestrator
 def engineer_features(df):
     print("[STARTING] Features engineering...")
     df = process_availability(df)
@@ -60,6 +77,7 @@ def process_availability(df):
     print("Processed feature 'availability' into 'available_immediately'")
     return df
 
+# Handles out-of-scope categories
 def process_category(df):
     df = df.copy()
 
@@ -81,9 +99,11 @@ def process_category(df):
     print("Processed features 'category' & 'property_type'")
     return df
 
+# Handles EPC label across regional variants
 def process_epc(df):
     df = df.copy()
 
+    # Flattens regional EPC label
     epc_map = {
         # Flanders
         "FlandersDoubleA": "excellent",
@@ -127,6 +147,7 @@ def process_epc(df):
     print("Processed feature 'epc' into 'epc_quality'")
     return df
 
+# Handles flooding_area_type feature to set NaN as NaN
 def process_flooding_area(df):
     df = df.copy()
 
@@ -145,6 +166,7 @@ def process_flooding_area(df):
     print("Processed feature 'flooding_area_type' to 'flooding_area_clean'")
     return df
 
+# Handles parking features by turning it into a presence flag
 def process_parkings(df):
     df = df.copy()
 

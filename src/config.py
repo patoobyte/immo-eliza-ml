@@ -129,3 +129,7 @@ MIN_VALID_PRICE = 30000
 MIN_SURFACE = 12
 MAX_GARAGES = 4
 MAX_FLOOR = 50
+
+## ===== TINY UTILS =====
+def format_euros(value):
+    return f"{value:,.0f}"
