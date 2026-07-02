@@ -69,6 +69,8 @@ BINARY_FEATURES = [
     "hammam_sauna_jacuzzi",
     "domotica",
     "available_immediately",
+	"indoor_parking",
+    "outdoor_parking",
 ]
 
 CATEGORICAL_FEATURES = [
