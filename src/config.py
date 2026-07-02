@@ -4,9 +4,9 @@ from pathlib import Path
 ## ===== PATHS =====
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-DATA_RAW = ROOT / "data" / "raw" / "listings_raw_20260629.csv"
-DATA_AUDITED = ROOT / "data" / "raw" / "listings_raw_20260629_audited.csv"
-DATA_CLN = ROOT / "data" / "clean" / "listings_clean.csv"
+DATA_RAW = ROOT / "data" / "raw" / "listings_raw_20260702.csv"
+DATA_AUDITED = ROOT / "data" / "raw" / "listings_raw_20260702_audited.csv"
+DATA_CLN = ROOT / "data" / "clean" / "listings_clean_20260702.csv"
 
 ## ===== FEATURES CLASSIFICATION =====
 NUMERIC_FEATURES = [
@@ -123,3 +123,7 @@ BINARY_MISSING_AS_UNKNOWN = [
 
 ## ===== MISC =====
 RANDOM_SEED = 13
+MIN_VALID_PRICE = 30000
+MIN_SURFACE = 12
+MAX_GARAGES = 4
+MAX_FLOOR = 50
