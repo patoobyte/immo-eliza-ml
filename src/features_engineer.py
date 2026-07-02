@@ -26,7 +26,7 @@ def engineer_features(df):
     df = process_category(df)
     df = process_epc(df)
     df = process_flooding_area(df)
-    df = process_binary_missing_values(df)
+    df = process_parkings(df)
     print("[COMPLETED] Features engineering...")
     return df
 
@@ -145,12 +145,24 @@ def process_flooding_area(df):
     print("Processed feature 'flooding_area_type' to 'flooding_area_clean'")
     return df
 
-def process_binary_missing_values(df):
+def process_parkings(df):
     df = df.copy()
 
-    for col in config.BINARY_MISSING_AS_ZERO:
-        df[col] = df[col].fillna(0)
-    print("Processed missing values for binary features")
+    parking_cols = [
+        "indoor_parking",
+        "outdoor_parking",
+    ]
+
+    for col in parking_cols:
+        parking = pd.to_numeric(df[col], errors="coerce")
+
+        df[col] = pd.NA
+        df.loc[parking.eq(0), col] = 0
+        df.loc[parking.notna() & parking.ne(0), col] = 1
+
+        df[col] = df[col].astype("Int64")
+
+    print("Processed parking features into binary presence flags")
     return df
 
 ## Select target and features

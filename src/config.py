@@ -22,8 +22,6 @@ NUMERIC_FEATURES = [
     "garden_surface",
     "terrace_surface",
     "garages",
-    "indoor_parking",
-    "outdoor_parking",
     "number_of_floors",
     "total_land_surface",
     "nursery_nearest_walk_m",
@@ -119,6 +117,8 @@ BINARY_MISSING_AS_UNKNOWN = [
     "furnished",
     "electrical_certificate",
     "available_immediately",
+	"indoor_parking",
+    "outdoor_parking",
 ]
 
 ## ===== MISC =====
