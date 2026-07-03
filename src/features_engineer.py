@@ -1,14 +1,58 @@
+"""
+-----------------------------------------
+Features Engineer
+-----------------------------------------
+
+This script transforms the cleaned dataset into model-ready features by:
+    1. Loading the cleaned CSV and removing any remaining exact duplicates
+    2. Enriching each listing with Statbel commune-level median prices
+       via a postal_code to NIS code lookup
+    3. Applying feature-specific transformations (availability, category,
+       EPC, flooding area, parkings, building state)
+    4. Engineering derived features (property_age)
+    5. Separating the price target from input features and splitting
+       into train/test sets
+
+Functions:
+    ### Orchestrators ###
+    - prepare_training_data()        : full pipeline returning X_train, X_test,
+                                       y_train, y_test for model training
+    - prepare_cv_data()              : full pipeline returning X, y for cross validation (CV)
+    - engineer_features()            : calls all feature transformation steps in order
+
+    ### Data loading ###
+    - load_data()                    : loads the cleaned CSV into a dataframe
+    - load_statbel_commune()         : loads Statbel commune-level median prices
+                                       from the xlsx file (2025 data only)
+    - load_postal_nis_mapping()      : builds a postal_code to NIS code dictionary
+                                       from the INS/NIS reference CSV
+
+    ### Feature transformations ###
+    - remove_exact_duplicates()      : removes remaining exact row duplicates
+    - enrich_with_statbel()          : joins commune median price and transaction
+                                       count per listing (house vs. apartment split)
+    - process_availability()         : converts availability to binary available_immediately flag
+    - process_category()             : removes out-of-scope categories and maps student_house to appartment
+    - process_epc()                  : maps regional EPC labels (Flanders, Brussels, Wallonia) to a unified quality scale
+    - process_flooding_area()        : normalises flooding_area_type and nulls unavailable values
+    - process_parkings()             : converts indoor/outdoor parking counts to binary presence flags
+    - process_building_state()       : merges sparse building_state labels
+    - engineer_derived_features()    : computes property_age from post_year minus build_year (clipped to 0)
+
+    ### Splitting ###
+    - split_target_features()        : separates target (price) from feature columns
+    - split_train_test()             : splits X and y into train/test sets
+
+    ### Standalone entry point ###
+    - main()                         : runs the full data preparation pipeline
+"""
+
 import pandas as pd
-from src import config
 from sklearn.model_selection import train_test_split
 
-"""
-(description)
+from src import config
 
-prepare_df : The orchestrator for preparing the dataset for model training.
-"""
-
-### MAIN ORCHESTRATORS ###
+# Orchestrator : Prepare data for final model training
 def prepare_training_data():
     df = load_data()
     df = remove_exact_duplicates(df)
@@ -17,6 +61,7 @@ def prepare_training_data():
     X_train, X_test, y_train, y_test = split_train_test(X, y)
     return X_train, X_test, y_train, y_test
 
+# Orchestrator : Prepare data for cross validation
 def prepare_cv_data():
     df = load_data()
     df = remove_exact_duplicates(df)
@@ -24,19 +69,77 @@ def prepare_cv_data():
     X, y = split_target_features(df)
     return X, y
 
-# Setup functions
+# Load the cleaned CSV selected in config.DATA_CLN
 def load_data():
     df = pd.read_csv(config.DATA_CLN)
     print("Loaded CSV")
     return df
 
+# Load 2025 Statbel commune-level transaction counts and median prices
+def load_statbel_commune():
+    raw = pd.read_excel(config.DATA_STATBEL_COMMUNE, sheet_name="Par commune", header=None)
+    data = raw.iloc[3:].copy()  # Rows 0-2 are headers; data starts at row 3
+    data.columns = range(data.shape[1])
+    df = pd.DataFrame({
+        "nis_code": pd.to_numeric(data[0], errors="coerce"),
+        "year": pd.to_numeric(data[2], errors="coerce"),
+        "house_count": pd.to_numeric(data[5], errors="coerce"),
+        "house_median": pd.to_numeric(data[6], errors="coerce"),
+        "apt_count": pd.to_numeric(data[20], errors="coerce"),
+        "apt_median": pd.to_numeric(data[21], errors="coerce"),
+    })
+    return df[df["year"] == 2025].dropna(subset=["nis_code"]).reset_index(drop=True)
+
+# Load postal-code to NIS-code mapping used to join Statbel data
+def load_postal_nis_mapping():
+    df = pd.read_csv(config.DATA_POSTAL_NIS, sep=";", usecols=["Code INS Commune", "Code postal"])
+    df.columns = ["nis_code", "postal_code"]
+    df["postal_code"] = df["postal_code"].astype(str).str.strip()
+    return df.drop_duplicates(subset="postal_code").set_index("postal_code")["nis_code"].to_dict()
+
+# Add Statbel commune median price and transaction count to each listing
+def enrich_with_statbel(df):
+    df = df.copy()
+
+    statbel = load_statbel_commune()
+    postal_to_nis = load_postal_nis_mapping()
+
+    statbel_lookup = statbel.set_index("nis_code")
+
+    postal_code_str = df["postal_code"].astype(str).str.strip()
+    nis_codes = postal_code_str.map(postal_to_nis)
+
+    is_apt = df["category"] == "appartment"
+
+    commune_median = pd.Series(index=df.index, dtype="float64")
+    transaction_count = pd.Series(index=df.index, dtype="float64")
+
+    for idx, nis in nis_codes.items():
+        if pd.isna(nis) or nis not in statbel_lookup.index:
+            continue
+        row = statbel_lookup.loc[nis]
+        if is_apt[idx]:
+            commune_median[idx] = row["apt_median"]
+            transaction_count[idx] = row["apt_count"]
+        else:
+            commune_median[idx] = row["house_median"]
+            transaction_count[idx] = row["house_count"]
+
+    df["statbel_commune_median"] = commune_median
+    df["statbel_transaction_count"] = transaction_count
+
+    matched = commune_median.notna().sum()
+    print(f"Enriched with Statbel commune data: {matched}/{len(df)} rows matched")
+    return df
+
+# Remove exact duplicate rows that may remain after cleaning
 def remove_exact_duplicates(df):
     duplicate_rows = df.duplicated(keep="first")
     df_deduped = df.loc[~duplicate_rows].copy()
     print("Removed exact duplicates")
     return df_deduped
 
-## Feature engineering orchestrator
+# Orchestrator : Run all feature engineering steps
 def engineer_features(df):
     print("[STARTING] Features engineering...")
     df = process_availability(df)
@@ -44,19 +147,22 @@ def engineer_features(df):
     df = process_epc(df)
     df = process_flooding_area(df)
     df = process_parkings(df)
+    df = process_building_state(df)
+    df = enrich_with_statbel(df)
+    df = engineer_derived_features(df)
     print("[COMPLETED] Features engineering...")
     return df
 
-# Process "availability" to a binary "available_immediately"
+# Convert availability into nullable binary available_immediately
 def process_availability(df):
     df = df.copy()
 
     # Converts all value for smooth comparison
     availability_clean = (
-    df["availability"]
-    .astype("string")
-    .str.lower()
-    .str.strip()
+        df["availability"]
+        .astype("string")
+        .str.lower()
+        .str.strip()
     )
 
     # New column created with missing as base value
@@ -70,14 +176,12 @@ def process_availability(df):
     
     # Converts to Int64 to preserve missing data
     df["available_immediately"] = df["available_immediately"].astype("Int64")
-
-    # Drop original column
     df = df.drop(columns=["availability"])
 
     print("Processed feature 'availability' into 'available_immediately'")
     return df
 
-# Handles out-of-scope categories
+# Remove out-of-scope property categories and normalize student housing
 def process_category(df):
     df = df.copy()
 
@@ -99,11 +203,10 @@ def process_category(df):
     print("Processed features 'category' & 'property_type'")
     return df
 
-# Handles EPC label across regional variants
+# Map regional EPC labels to a shared quality scale
 def process_epc(df):
     df = df.copy()
 
-    # Flattens regional EPC label
     epc_map = {
         # Flanders
         "FlandersDoubleA": "excellent",
@@ -147,7 +250,7 @@ def process_epc(df):
     print("Processed feature 'epc' into 'epc_quality'")
     return df
 
-# Handles flooding_area_type feature to set NaN as NaN
+# Normalize flooding area labels and convert unavailable values to missing
 def process_flooding_area(df):
     df = df.copy()
 
@@ -166,7 +269,19 @@ def process_flooding_area(df):
     print("Processed feature 'flooding_area_type' to 'flooding_area_clean'")
     return df
 
-# Handles parking features by turning it into a presence flag
+# Merge building_state labels into broader categories
+def process_building_state(df):
+    df = df.copy()
+
+    df["building_state"] = df["building_state"].replace({
+        "To be renovated": "To renovate",
+        "To demolish":     "To restore",
+    })
+
+    print("Processed feature 'building_state': merged sparse labels")
+    return df
+
+# Convert indoor/outdoor parking counts into nullable presence flags
 def process_parkings(df):
     df = df.copy()
 
@@ -187,7 +302,20 @@ def process_parkings(df):
     print("Processed parking features into binary presence flags")
     return df
 
-## Select target and features
+# Create derived numeric features from existing columns
+def engineer_derived_features(df):
+    df = df.copy()
+
+    build_year = pd.to_numeric(df["build_year"], errors="coerce")
+    post_year = pd.to_numeric(df["post_year"], errors="coerce")
+
+    # Clip to 0 - under construction properties have future build_year
+    df["property_age"] = (post_year - build_year).clip(lower=0)
+
+    print("Engineered derived feature 'property_age'")
+    return df
+
+# Separate target (price) from model input features
 def split_target_features(df):
     print("[STARTING] Target/features split")
     target = "price"
@@ -202,7 +330,7 @@ def split_target_features(df):
 
     return X, y
 
-## Split train/test
+# Split features and target into reproducible train/test sets
 def split_train_test(X, y):
     print("[STARTING] Train/test split")
 
@@ -221,10 +349,11 @@ def split_train_test(X, y):
 
     return X_train, X_test, y_train, y_test
 
+# Run the feature engineering workflow as a standalone script
 def main():
 
     print(f"\n{'=' * 60}")
-    print(" training_base.py ")
+    print(" features_engineer.py ")
     print(f"\n{'=' * 60}")
 
     print("[STARTING] Loading and preparing data...")

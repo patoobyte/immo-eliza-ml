@@ -1,21 +1,30 @@
-import pandas as pd
-from src import config
-import warnings
-from pathlib import Path
+"""
+-----------------------------------------
+Dataset Cleaner
+-----------------------------------------
 
-warnings.filterwarnings("ignore")
+This script reduces the audited dataset to a model-ready CSV by:
+    1. Loading the audited dataset produced by raw_auditor.py
+    2. Dropping columns that are unused due to >90% missingness, weak expected
+       signal, redundancy with other features, or being unique identifiers/metadata
+    3. Parsing date_posted into post_year and post_month, then dropping the
+       original date column
+    4. Saving the cleaned dataset to DATA_CLN
+
+Note: this script runs top-to-bottom as a standalone script.
+"""
+
+import pandas as pd
+
+from src import config
+
 pd.set_option("display.max_columns", None)
 pd.set_option("display.max_info_columns", 200)
 pd.set_option("display.float_format", "{:.3f}".format)
 
 df = pd.read_csv(config.DATA_AUDITED)
 
-# Checks the dataset's shape before processing
-# print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns\n")
-# df.head()
-# df.info()
-
-## STEP 1 : Dropping unusable columns ##
+# STEP 1 : Dropping unused columns
 COLS_TO_DROP = {
     "property_id" : "Unique identifier",
     "immovlan_id" : "Unique identifier",
@@ -98,12 +107,12 @@ COLS_TO_DROP = {
     "demarcated_flooding_area" : ">90% missingness",
 }
 
-print(f"Cleaning - Step 1: Dropping unusable features...")
+print(f"[STARTING] Dataset cleaning")
+print(f"Cleaning - Step 1: Dropping unused columns...")
 df = df.drop(columns=COLS_TO_DROP, errors="ignore")
-print(f"Dropped {len(COLS_TO_DROP)} column(s): {COLS_TO_DROP}")
-print(f"Remaining shape after Step 1: {df.shape}")
+print(f"New shape: {df.shape}")
 
-## STEP 2 : Converting data types ##
+# STEP 2 : Converting data types
 print(f"Cleaning - Step 2: Converting data types...")
 
 # 2-1 : Convert date data to date format
@@ -115,17 +124,9 @@ df["post_month"] = df["date_posted"].dt.month
 
 # Drop original date_posted column
 df = df.drop(columns=["date_posted"])
-df.info()
 
-#STEP 3 - 
-# garages = set above >= 5 as missing (suspicious!)
-# convert parkings to yes/no not actual count
-# if floor > number_of_floors: set floor to missing
-# Availability = immediately, missing or not_immediately (anything else)
-# EPC 
-# building_state = maybe group more
-
-##  Saving to CSV
-path = Path(config.DATA_CLN)
+# Saving to CSV
+path = config.DATA_CLN
 path.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(path, index=False, encoding="utf-8")
+print(f"[COMPLETED] Dataset cleaning")
