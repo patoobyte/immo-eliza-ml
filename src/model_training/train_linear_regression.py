@@ -1,65 +1,67 @@
 """
---------------------------------------
-Trainer using Linear Regression Model
---------------------------------------
+-----------------------------------------
+Linear Regression Model Trainer
+-----------------------------------------
+Note: this model is kept as a baseline only. 
+It was not selected for final prediction because cross-validation showed unstable and poor performance, 
+including negative R2 scores and implausible predictions. 
+No trained Linear Regression model is saved.
 
-1. Cleans data
-2. Create features
-3. Split dataset into train/test
-4. Build pipeline
-5. Train model
-6. Evaluate predictions
+This script trains a Linear Regression model to predict Belgian property
+prices by:
+    1. Loading and preparing the cleaned dataset via the features pipeline
+    2. Building a preprocessing pipeline 
+    3. Training the model on log1p-transformed prices
+    4. Evaluating predictions on both train and test sets (expm1 back-transformed)
+    5. Printing metrics (MAE, RMSE, R²), overfitting gaps and worst errors
 
+Functions:
+    - build_preprocessor()           : builds the ColumnTransformer with all feature pipelines 
+    - build_model_pipeline()         : assembles preprocessor + LinearRegression into a single sklearn Pipeline
+    - train_model()                  : fits the pipeline on log1p(y_train)
+    - compute_metrics()              : returns MAE, RMSE and R² as a dict
+    - print_metrics()                : prints formatted train or test metrics
+    - print_overfitting()            : prints MAE, RMSE and R² gaps between train and test
+    - print_prediction_diagnostics() : prints price range and the 10 worst prediction errors
+    - evaluate_model()               : runs prediction on train and test, calls metrics and diagnostics printers
+    - main()                         : orchestrates the full training workflow
 """
 
-## SETUP ## 
 import joblib
 import numpy as np
 import pandas as pd
-from src import config
-from src.features_engineer import (
-    load_data,
-    remove_exact_duplicates,
-    engineer_features,
-    split_target_features,
-    split_train_test,
-)
+
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import FunctionTransformer
 
+from src import config
+from src.features_engineer import prepare_training_data
+
 MODEL = "Linear Regression"
 
-# STEP 1
-def build_preprocessor() -> ColumnTransformer:
-    """
-    This function prepares data using transformers.
-    """
+def build_preprocessor():
 
-    # Handles numeric features
     numeric_pipeline = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="median")), # NaN = median of column
-        ("scaler", StandardScaler()), # Standardizes
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
     ])
 
-    # Handles binary features where NaN becomes 0
     binary_zero_pipeline = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="constant", fill_value=0)), # NaN = 0
+        ("imputer", SimpleImputer(strategy="constant", fill_value=0)),
     ])
 
-    # Handles binary features where NaN is kept
     binary_unknown_pipeline = Pipeline(steps=[
-        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))), # Converts to object type
-        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")), # NaN = "Unknown"
-        ("to_string", FunctionTransformer(lambda X: X.astype(str))), # Converts to string
-        ("onehot", OneHotEncoder(handle_unknown="ignore")), # Apply one-hot encoding
+        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
+        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
+        ("to_string", FunctionTransformer(lambda X: X.astype(str))),
+        ("onehot", OneHotEncoder(handle_unknown="ignore")),
     ])
 
-    # Handles categporical features (same as above)
     categorical_pipeline = Pipeline(steps=[
         ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
         ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
@@ -67,13 +69,28 @@ def build_preprocessor() -> ColumnTransformer:
         ("onehot", OneHotEncoder(handle_unknown="ignore")),
     ])
 
-    # Handles connecting features to the right pipeline
+    target_encoding_pipeline = Pipeline(steps=[
+        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
+        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
+        ("to_string", FunctionTransformer(lambda X: X.astype(str))),
+        ("target_encoder", TargetEncoder(target_type="continuous", smooth="auto")),
+    ])
+
+    ordinal_as_categorical_pipeline = Pipeline(steps=[
+    ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
+    ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
+    ("to_string", FunctionTransformer(lambda X: X.astype(str))),
+    ("onehot", OneHotEncoder(handle_unknown="ignore")),
+    ])
+
     preprocessor = ColumnTransformer(
         transformers=[
             ("numeric", numeric_pipeline, config.NUMERIC_FEATURES),
             ("binary_zero", binary_zero_pipeline, config.BINARY_MISSING_AS_ZERO),
             ("binary_unknown", binary_unknown_pipeline, config.BINARY_MISSING_AS_UNKNOWN),
             ("categorical", categorical_pipeline, config.CATEGORICAL_FEATURES),
+            ("target_encoded", target_encoding_pipeline, config.TARGET_ENCODED_FEATURES),
+            ("ordinal", ordinal_as_categorical_pipeline, list(config.ORDINAL_FEATURES.keys())),
         ]
     )
 
@@ -81,20 +98,20 @@ def build_preprocessor() -> ColumnTransformer:
     return preprocessor
 
 def build_model_pipeline():
-    print("[STARTING] Building linear regression pipeline...")
+    print(f"[STARTING] Building {MODEL} pipeline...")
     preprocessor = build_preprocessor()
     model_pipeline = Pipeline(steps=[
         ("preprocessor", preprocessor),
         ("model", LinearRegression()),
     ])
-    print("[COMPLETED] Linear Regression pipeline")
+    print(f"[COMPLETED] {MODEL} pipeline")
     return model_pipeline
 
-# Training step
 def train_model(model_pipeline, X_train, y_train):
-    print("[STARTING] Training Linear Regression model...")
-    model_pipeline.fit(X_train, y_train)
-    print("[COMPLETED] Trained Linear Regression model")
+    print(f"[STARTING] Training {MODEL} model...")
+    y_train_log = np.log1p(y_train)
+    model_pipeline.fit(X_train, y_train_log)
+    print(f"[COMPLETED] Training {MODEL} model")
     return model_pipeline
 
 def compute_metrics(y_true, y_pred):
@@ -106,8 +123,8 @@ def compute_metrics(y_true, y_pred):
 
 def print_metrics(label, metrics):
     print(f"\n{MODEL} {label} metrics:")
-    print("MAE:", round(metrics["mae"], 2))
-    print("RMSE:", round(metrics["rmse"], 2))
+    print("MAE:", config.format_euros(round(metrics["mae"], 2)))
+    print("RMSE:", config.format_euros(round(metrics["rmse"], 2)))
     print("R2:", round(metrics["r2"], 4))
 
 def print_prediction_diagnostics(label, y_true, y_pred):
@@ -120,27 +137,37 @@ def print_prediction_diagnostics(label, y_true, y_pred):
     errors["absolute_error"] = errors["error"].abs()
 
     print(f"\n {MODEL} {label} prediction diagnostics:")
-    print("Min predicted price:", round(errors["predicted"].min(), 2))
-    print("Max predicted price:", round(errors["predicted"].max(), 2))
+    print("Min predicted price:", config.format_euros(errors["predicted"].min()))
+    print("Max predicted price:", config.format_euros(errors["predicted"].max()))
     print("Negative predictions:", int((errors["predicted"] < 0).sum()))
 
+    pd.set_option("display.float_format", "{:,.0f}".format)
+
     print(f"\n{MODEL} {label} worst prediction errors:")
-    print(
+    worst_errors = (
         errors
         .sort_values("absolute_error", ascending=False)
         .head(10)
-        .to_string()
+        .copy()
     )
+    for col in ["actual", "predicted", "error", "absolute_error"]:
+        worst_errors[col] = worst_errors[col].map(config.format_euros)
+
+    print(worst_errors.to_string())
 
 def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
-    y_train_pred = model_pipeline.predict(X_train)
-    y_test_pred = model_pipeline.predict(X_test)
+    y_train_pred_log = model_pipeline.predict(X_train)
+    y_train_pred = np.expm1(y_train_pred_log)
+
+    y_test_pred_log = model_pipeline.predict(X_test)
+    y_test_pred = np.expm1(y_test_pred_log)
 
     train_metrics = compute_metrics(y_train, y_train_pred)
     test_metrics = compute_metrics(y_test, y_test_pred)
 
     print_metrics("Train", train_metrics)
     print_metrics("Test", test_metrics)
+    print_overfitting(train_metrics, test_metrics)
 
     print_prediction_diagnostics("Test", y_test, y_test_pred)
 
@@ -149,33 +176,26 @@ def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
         "test": test_metrics,
     }
 
-def main():
-    """
-     Main training workflow:
-    - Load and clean the dataset
-    - Engineer features and separate inputs from target
-    - Split data into training and testing sets
-    - Build the pipeline 
-    - Train the model on training data
-    - Evaluate model performance on train/test data
-    """
+def print_overfitting(train_metrics, test_metrics):
+    mae_gap = test_metrics["mae"] - train_metrics["mae"]
+    rmse_gap = test_metrics["rmse"] - train_metrics["rmse"]
+    r2_gap = train_metrics["r2"] - test_metrics["r2"]
 
-    # Prints header
+    print("\nOverfitting check:")
+    print("MAE gap:", f"{mae_gap:,.0f} €")
+    print("RMSE gap:", f"{rmse_gap:,.0f} €")
+    print("R2 gap:", round(r2_gap, 4))
+
+def main():
     print(f"\n{'=' * 60}")
     print(" train_linear_regression.py ")
     print(f"{'=' * 60}")
+
     print("[STARTING] Loading and preparing data...")
-
-    df = load_data() # Loads the dataset into a dataframe
-    df = remove_exact_duplicates(df) # Cleans the dataset
-    print("[COMPLETED] Initial setup")
-
-    df = engineer_features(df) # Feature engineering
-    X, y = split_target_features(df) # Split target from imput features
-    X_train, X_test, y_train, y_test = split_train_test(X, y) # Split dataset to train/test
-    model_pipeline = build_model_pipeline() # Creates the pipeline
-    model_pipeline = train_model(model_pipeline, X_train, y_train) # Training
-    y_pred, metrics = evaluate_model(model_pipeline, X_train, y_train, X_test, y_test) # Tests the trained model and show metrics
+    X_train, X_test, y_train, y_test = prepare_training_data()
+    model_pipeline = build_model_pipeline()
+    model_pipeline = train_model(model_pipeline, X_train, y_train)
+    y_pred, metrics = evaluate_model(model_pipeline, X_train, y_train, X_test, y_test)
 
 if __name__ == "__main__":
     main()

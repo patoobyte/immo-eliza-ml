@@ -1,24 +1,54 @@
+"""
+-----------------------------------------
+Random Forest Model Trainer
+-----------------------------------------
+
+This script trains a Random Forest regression model to predict Belgian property prices by:
+    1. Loading and preparing the cleaned dataset via the features pipeline
+    2. Building a preprocessing pipeline (numeric, binary, categorical,
+       target-encoded and ordinal transformers) followed by the Random Forest model
+    3. Training the model on log1p-transformed prices
+    4. Evaluating predictions on both train and test sets (expm1 back-transformed)
+    5. Printing metrics (MAE, RMSE, R2), overfitting gaps and worst errors
+
+Functions:
+    - build_preprocessor()           : builds the ColumnTransformer with all feature pipelines
+    - build_model_pipeline()         : assembles preprocessor + RandomForestRegressor into a single sklearn Pipeline
+    - train_model()                  : fits the pipeline on log1p(y_train)
+    - compute_metrics()              : returns MAE, RMSE and R2 as a dictionary
+    - print_metrics()                : prints formatted train or test metrics
+    - print_overfitting()            : prints MAE, RMSE and R2 gaps between train and test
+    - print_prediction_diagnostics() : prints price range and the 10 worst prediction errors
+    - evaluate_model()               : runs prediction on train and test, calls metrics and diagnostics printers
+    - save_model()                   : saves the trained model pipeline to disk with joblib
+    - main()                         : orchestrates the full training workflow
+"""
+
 import joblib
 import numpy as np
 import pandas as pd
-from src import config
-from src.features_engineer import (
-    load_data,
-    remove_exact_duplicates,
-    engineer_features,
-    split_target_features,
-    split_train_test,
-)
+
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, TargetEncoder, OrdinalEncoder
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import FunctionTransformer
 
+from src import config
+from src.features_engineer import prepare_training_data
+
 MODEL = "Random Forest"
 
+# Helpers to avoid using lambda functions
+def nan_to_object(X):
+    return X.astype("object").replace({pd.NA: np.nan})
+
+def to_str(X):
+    return X.astype(str)
+
+# Build preprocessing pipelines for all feature groups
 def build_preprocessor():
 
     numeric_pipeline = Pipeline(steps=[
@@ -30,17 +60,34 @@ def build_preprocessor():
     ])
 
     binary_unknown_pipeline = Pipeline(steps=[
-        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
+        ("to_object", FunctionTransformer(nan_to_object)),
         ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
-        ("to_string", FunctionTransformer(lambda X: X.astype(str))),
+        ("to_string", FunctionTransformer(to_str)),
         ("onehot", OneHotEncoder(handle_unknown="ignore")),
     ])
 
     categorical_pipeline = Pipeline(steps=[
-        ("to_object", FunctionTransformer(lambda X: X.astype("object").replace({pd.NA: np.nan}))),
+        ("to_object", FunctionTransformer(nan_to_object)),
         ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
-        ("to_string", FunctionTransformer(lambda X: X.astype(str))),
+        ("to_string", FunctionTransformer(to_str)),
         ("onehot", OneHotEncoder(handle_unknown="ignore")),
+    ])
+
+    target_encoding_pipeline = Pipeline(steps=[
+        ("to_object", FunctionTransformer(nan_to_object)),
+        ("imputer", SimpleImputer(strategy="constant", fill_value="Unknown")),
+        ("to_string", FunctionTransformer(to_str)),
+        ("target_encoder", TargetEncoder(target_type="continuous", smooth="auto")),
+    ])
+
+    ordinal_pipeline = Pipeline(steps=[
+        ("to_object", FunctionTransformer(nan_to_object)),
+        ("ordinal", OrdinalEncoder(
+            categories=list(config.ORDINAL_FEATURES.values()),
+            handle_unknown="use_encoded_value",
+            unknown_value=np.nan,
+            encoded_missing_value=np.nan,
+        )),
     ])
 
     preprocessor = ColumnTransformer(
@@ -49,14 +96,17 @@ def build_preprocessor():
             ("binary_zero", binary_zero_pipeline, config.BINARY_MISSING_AS_ZERO),
             ("binary_unknown", binary_unknown_pipeline, config.BINARY_MISSING_AS_UNKNOWN),
             ("categorical", categorical_pipeline, config.CATEGORICAL_FEATURES),
+            ("target_encoded", target_encoding_pipeline, config.TARGET_ENCODED_FEATURES),
+            ("ordinal", ordinal_pipeline, list(config.ORDINAL_FEATURES.keys())),
         ]
     )
 
     print("Pipeline preprocessing complete")
     return preprocessor
 
+# Assemble preprocessing and Random Forest into one sklearn pipeline
 def build_model_pipeline():
-    print("[STARTING] Building Random Forest pipeline...")
+    print(f"[STARTING] Building {MODEL} pipeline...")
     preprocessor = build_preprocessor()
     model_pipeline = Pipeline(steps=[
         ("preprocessor", preprocessor),
@@ -67,15 +117,18 @@ def build_model_pipeline():
             max_depth=None,
         )),
     ])
-    print("[COMPLETED] Random Forest pipeline")
+    print(f"[COMPLETED] {MODEL} pipeline")
     return model_pipeline
 
+# Train Random Forest on log-transformed prices
 def train_model(model_pipeline, X_train, y_train):
-    print("[STARTING] Training Random Forest model...")
-    model_pipeline.fit(X_train, y_train)
-    print("[COMPLETED] Trained Random Forest model")
+    print(f"[STARTING] Training {MODEL} model...")
+    y_train_log = np.log1p(y_train)
+    model_pipeline.fit(X_train, y_train_log)
+    print(f"[COMPLETED] Training {MODEL} model")
     return model_pipeline
 
+# Compute regression metrics on real price scale
 def compute_metrics(y_true, y_pred):
     return {
         "mae": mean_absolute_error(y_true, y_pred),
@@ -83,12 +136,14 @@ def compute_metrics(y_true, y_pred):
         "r2": r2_score(y_true, y_pred),
     }
 
+# Print formatted metrics
 def print_metrics(label, metrics):
     print(f"\n{MODEL} {label} metrics:")
-    print("MAE:", round(metrics["mae"], 2))
-    print("RMSE:", round(metrics["rmse"], 2))
+    print("MAE:", config.format_euros(round(metrics["mae"], 2)))
+    print("RMSE:", config.format_euros(round(metrics["rmse"], 2)))
     print("R2:", round(metrics["r2"], 4))
 
+# Print prediction range and largest test errors
 def print_prediction_diagnostics(label, y_true, y_pred):
     errors = pd.DataFrame({
         "actual": y_true,
@@ -98,28 +153,39 @@ def print_prediction_diagnostics(label, y_true, y_pred):
     errors["error"] = errors["predicted"] - errors["actual"]
     errors["absolute_error"] = errors["error"].abs()
 
-    print(f"\n {MODEL} {label} prediction diagnostics:")
-    print("Min predicted price:", round(errors["predicted"].min(), 2))
-    print("Max predicted price:", round(errors["predicted"].max(), 2))
+    print(f"\n{MODEL} {label} prediction diagnostics:")
+    print("Min predicted price:", config.format_euros(errors["predicted"].min()))
+    print("Max predicted price:", config.format_euros(errors["predicted"].max()))
     print("Negative predictions:", int((errors["predicted"] < 0).sum()))
 
+    pd.set_option("display.float_format", "{:,.0f}".format)
+
     print(f"\n{MODEL} {label} worst prediction errors:")
-    print(
+    worst_errors = (
         errors
         .sort_values("absolute_error", ascending=False)
         .head(10)
-        .to_string()
+        .copy()
     )
+    for col in ["actual", "predicted", "error", "absolute_error"]:
+        worst_errors[col] = worst_errors[col].map(config.format_euros)
 
+    print(worst_errors.to_string())
+
+# Evaluate train and test predictions
 def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
-    y_train_pred = model_pipeline.predict(X_train)
-    y_test_pred = model_pipeline.predict(X_test)
+    y_train_pred_log = model_pipeline.predict(X_train)
+    y_train_pred = np.expm1(y_train_pred_log)
+
+    y_test_pred_log = model_pipeline.predict(X_test)
+    y_test_pred = np.expm1(y_test_pred_log)
 
     train_metrics = compute_metrics(y_train, y_train_pred)
     test_metrics = compute_metrics(y_test, y_test_pred)
 
     print_metrics("Train", train_metrics)
     print_metrics("Test", test_metrics)
+    print_overfitting(train_metrics, test_metrics)
 
     print_prediction_diagnostics("Test", y_test, y_test_pred)
 
@@ -128,21 +194,38 @@ def evaluate_model(model_pipeline, X_train, y_train, X_test, y_test):
         "test": test_metrics,
     }
 
+# Compare train and test metrics to check overfitting
+def print_overfitting(train_metrics, test_metrics):
+    mae_gap = test_metrics["mae"] - train_metrics["mae"]
+    rmse_gap = test_metrics["rmse"] - train_metrics["rmse"]
+    r2_gap = train_metrics["r2"] - test_metrics["r2"]
+
+    print("\nOverfitting check:")
+    print("MAE gap:", f"{mae_gap:,.0f}")
+    print("RMSE gap:", f"{rmse_gap:,.0f}")
+    print("R2 gap:", round(r2_gap, 4))
+
+# Save the fitted pipeline with joblib
+def save_model(model_pipeline):
+    model_path = config.MODEL_PATH / "random_forest_pipeline.joblib"
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
+    joblib.dump(model_pipeline, model_path)
+
+    print(f"Saved {MODEL} model to: {model_path}")
+
+# Orchestrator : run the full Random Forest training workflow
 def main():
     print(f"\n{'=' * 60}")
     print(" train_random_forest.py ")
     print(f"{'=' * 60}")
 
     print("[STARTING] Loading and preparing data...")
-    df = load_data()
-    df = remove_exact_duplicates(df)
-    print("[COMPLETED] Initial setup")
-    df = engineer_features(df)
-    X, y = split_target_features(df)
-    X_train, X_test, y_train, y_test = split_train_test(X, y)
+    X_train, X_test, y_train, y_test = prepare_training_data()
     model_pipeline = build_model_pipeline()
     model_pipeline = train_model(model_pipeline, X_train, y_train)
     y_pred, metrics = evaluate_model(model_pipeline, X_train, y_train, X_test, y_test)
+    save_model(model_pipeline)
 
 if __name__ == "__main__":
     main()

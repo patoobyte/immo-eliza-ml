@@ -1,4 +1,11 @@
-# src/config.py
+"""
+-----------------------------------------
+Config file
+-----------------------------------------
+Central configuration for data paths, feature groups, cleaning thresholds,
+and small shared utilities used across preprocessing and model training.
+"""
+
 from pathlib import Path
 
 ## ===== PATHS =====
@@ -7,8 +14,12 @@ DATA_DIR = ROOT / "data"
 DATA_RAW = ROOT / "data" / "raw" / "listings_raw_20260702.csv"
 DATA_AUDITED = ROOT / "data" / "raw" / "listings_raw_20260702_audited.csv"
 DATA_CLN = ROOT / "data" / "clean" / "listings_clean_20260702.csv"
+DATA_STATBEL_COMMUNE = ROOT / "data" / "raw" / "FR_immo_statbel_annee.xlsx"
+DATA_POSTAL_NIS = ROOT / "data" / "raw" / "codes-ins-nis-postaux-belgique.csv"
+MODEL_PATH = ROOT / "models"
 
 ## ===== FEATURES CLASSIFICATION =====
+# Features passed to numeric pipeline
 NUMERIC_FEATURES = [
     "latitude",
     "longitude",
@@ -41,8 +52,13 @@ NUMERIC_FEATURES = [
     "bike_sharing_nearest_walk_m",
     "post_year",
     "post_month",
+    "statbel_commune_median",
+    "statbel_transaction_count",
+    "property_age",
 ]
 
+# Binary features 
+# Missing values are handled by the two policy lists below
 BINARY_FEATURES = [
     "new_construction",
     "vat",
@@ -69,27 +85,37 @@ BINARY_FEATURES = [
     "hammam_sauna_jacuzzi",
     "domotica",
     "available_immediately",
-	"indoor_parking",
+    "indoor_parking",
     "outdoor_parking",
 ]
 
+# Nominal categorical features
 CATEGORICAL_FEATURES = [
     "property_type",
     "province",
     "region",
-    "kitchen_equipment",
-    "building_state",
     "heating_type",
     "glazing_type",
     "facade_orientation",
     "terrace_orientation",
     "flooding_area_clean",
-    "epc_quality",
-    "postal_code",
     "category",
 ]
 
+# Ordered categorical features
+ORDINAL_FEATURES = {
+    "epc_quality":       ["bad", "poor", "good", "excellent"],
+    "kitchen_equipment": ["Not equipped", "Partially equipped", "Fully equipped", "Super equipped"],
+    "building_state":    ["To restore", "To renovate", "Normal", "Fully renovated", "Excellent", "New"],
+}
+
+# Categorical features handled with target encoding
+TARGET_ENCODED_FEATURES = [
+    "postal_code",
+]
+
 ## ===== MISSING HANDLING FOR BINARY FEATURES =====
+# Missing means absence
 BINARY_MISSING_AS_ZERO = [
     "heat_pump",
     "solar_panels",
@@ -112,6 +138,7 @@ BINARY_MISSING_AS_ZERO = [
     "domotica",
 ]
 
+# Missing is preserved as an Unknown category
 BINARY_MISSING_AS_UNKNOWN = [
     "new_construction",
     "vat",
@@ -119,7 +146,7 @@ BINARY_MISSING_AS_UNKNOWN = [
     "furnished",
     "electrical_certificate",
     "available_immediately",
-	"indoor_parking",
+    "indoor_parking",
     "outdoor_parking",
 ]
 
