@@ -5,7 +5,7 @@
 ## 🚀 Project Context
 
 The goal of this project is to develop a machine learning model that can reliably predict real estate property prices in Belgium for Immo Eliza. 
-After collecting, cleaning, and exploring the data, the next step is to preprocess the dataset and engineer relevant features in order to train a robust and performant predictive model that can support data-driven pricing decisions.
+After collecting, cleaning, and exploring the data, this step is to preprocess the dataset and engineer relevant features in order to train a robust and performant predictive model that can support data-driven pricing decisions.
 
 ---
 
