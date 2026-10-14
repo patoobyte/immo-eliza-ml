@@ -226,9 +226,14 @@ models/
 ```
 
 ---  
-## 🏃 Timeline 🏃
+## Timeline 
 
 The project was completed over 5 days.
+
+---
+## Next step : Deployment ##
+
+See how the model was deployed [here](https://github.com/patoobyte/immo-eliza-deployment).  
 
 ---  
 
